@@ -50,8 +50,9 @@ if [[ ! -f /home/mailadmin/.ssh/authorized_keys ]]; then
     echo "**** with your own keys!  ****"
 
     ssh-keygen -f /home/mailadmin/.ssh/id_rsa -N "mailadmin"
-    mv /home/mailadmin/.ssh/id_rsa.pub /home/mailadmin/.ssh/authorized_keys
+    cp /home/mailadmin/.ssh/id_rsa.pub /home/mailadmin/.ssh/authorized_keys
     chmod 600 /home/mailadmin/.ssh/authorized_keys
+    cat /home/mailadmin/.ssh/authorized_keys
     cat /home/mailadmin/.ssh/id_rsa
 fi
 
