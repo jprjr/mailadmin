@@ -112,7 +112,7 @@ sub add_user {
     my $hash = crypt($password, make_salt());
     my $dbh = build_dbh();
     my $sth = $dbh->prepare('insert into users(email, password) values (?,?)');
-    if($sth->execute($email,$hash)) {
+    if($sth->execute($email,'{SHA512-CRYPT}'.$hash)) {
         print "$email successfully added\n";
     }
 }
