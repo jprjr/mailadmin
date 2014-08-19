@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+declare MYSQL_HOST
+declare DOVECOT_SQL_USER
+declare DOVECOT_SQL_PASS
+declare AUTHORIZED_KEYS_URL
+
+if [[ -f /private/vars.sh ]]; then
+    source /private/vars.sh
+fi
+
+MYSQL_NAME=${MYSQL_NAME:-}
+
+if [[ -n ${MYSQL_NAME} ]]; then
+    MYSQL_HOST=mysql
+fi
+
+echo "MYSQL_HOST=$MYSQL_HOST" > /home/mailadmin/vars
+echo "DOVECOT_SQL_USER=$DOVECOT_SQL_USER" >> /home/mailadmin/vars
+echo "DOVECOT_SQL_PASS=$DOVECOT_SQL_PASS" >> /home/mailadmin/vars
+
+chown mailadmin:mailadmin /home/mailadmin/vars
+
+mkdir -p /etc/ssh
+
+if [[ ! -f /etc/ssh/sshd_config ]]; then
+    cp /opt/ssh.default/sshd_config /etc/ssh/sshd_config
+fi
+
+mkdir -p /home/mailadmin/.ssh
+
+# Copy ssh authorized_keys from /private
+if [[ -f /private/ssh/authorized_keys ]]; then
+    cp /private/ssh/authorized_keys /home/mailadmin/.ssh/authorized_keys
+    chmod 600 /home/mailadmin/.ssh/authorized_keys
+fi
+
+# Download authorized_keys from URL
+AUTHORIZED_KEYS_URL=${AUTHORIZED_KEYS_URL:-}
+if [[ -n ${AUTHORIZED_KEYS_URL} ]]; then
+    curl -R -L -o /home/mailadmin/.ssh/authorized_keys "${AUTHORIZED_KEYS_URL}"
+    chmod 600 /home/mailadmin/.ssh/authorized_keys
+fi
+
+# Failing both of those, generate a keypair and print out the private key
+
+if [[ ! -f /home/mailadmin/.ssh/authorized_keys ]]; then
+    echo "**** Generating ssh keys  ****"
+    echo "**** Please replace these ****"
+    echo "**** with your own keys!  ****"
+
+    ssh-keygen -f /home/mailadmin/.ssh/id_rsa -N "mailadmin"
+    mv /home/mailadmin/.ssh/id_rsa.pub /home/mailadmin/.ssh/authorized_keys
+    chmod 600 /home/mailadmin/.ssh/authorized_keys
+    cat /home/mailadmin/.ssh/id_rsa
+fi
+
+chown -R mailadmin:mailadmin /home/mailadmin/.ssh
+chmod 700 /home/mailadmin/.ssh
+
+ssh-keygen -A

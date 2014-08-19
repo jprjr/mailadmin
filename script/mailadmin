@@ -1,0 +1,233 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use IO::Prompter;
+use DBI;
+
+my $settings = {};
+get_settings();
+
+if(@ARGV < 1) {
+   usage();
+   exit 1;
+}
+
+
+my $arg = shift @ARGV;
+
+if($arg =~ /^user$/i) {
+    handle_user();
+}
+elsif ($arg =~ /^alias$/i) {
+    handle_alias();
+}
+else {
+   usage();
+   exit 1;
+}
+
+exit 0;
+
+sub usage {
+    print STDERR "Usage:\n";
+    print STDERR q{  }.$0." user ls\n";
+    print STDERR q{  }.$0." user add <email address>\n";
+    print STDERR q{  }.$0." user del <email address>\n";
+    print STDERR q{  }.$0." alias ls\n";
+    print STDERR q{  }.$0." alias add <alias> <email address>\n";
+    print STDERR q{  }.$0." alias del <alias>\n";
+}
+
+sub handle_user {
+    if(@ARGV < 1) {
+        print STDERR "Need a command for user\n";
+        usage();
+        exit 1;
+    }
+    my $arg = shift @ARGV;
+    if($arg =~ /^ls$/i) {
+        list_users();
+    }
+    elsif($arg =~ /^add$/i) {
+        add_user();
+    }
+    elsif($arg =~ /^del$/i) {
+        del_user();
+    }
+}
+
+sub handle_alias {
+    if(@ARGV < 1) {
+        print STDERR "Need a command for alias\n";
+        usage();
+        exit 1;
+    }
+    my $arg = shift @ARGV;
+    if($arg =~ /^ls$/i) {
+        list_aliases();
+    }
+    elsif($arg =~ /^add$/i) {
+        add_alias();
+    }
+    elsif($arg =~ /^del$/i) {
+        del_alias();
+    }
+}
+
+sub list_users {
+   my $dbh = build_dbh();
+    my $sth = $dbh->prepare('SELECT email FROM users');
+    $sth->execute();
+    while(my $row = $sth->fetchrow_hashref()) {
+        print q{  }.$row->{'email'}."\n";
+    }
+}
+
+sub add_user {
+    if(@ARGV < 1) {
+        print STDERR "Need an email address to add\n";
+        usage();
+        exit 1;
+    }
+    my $email = shift @ARGV;
+    my $password;
+    if(@ARGV > 0) {
+        $password = shift @ARGV;
+    }
+    else {
+        print "Getting password for user $email\n";
+        my $pass1 = prompt 'Password: ', -echo=>'';
+        my $pass2 = prompt 'Password again: ', -echo=>'';
+        if($pass1 eq $pass2) {
+            $password = $pass1;
+        }
+        else {
+            print STDERR "Passwords don't match\n";
+            exit 1;
+        }
+    }
+
+    # encrypt the password
+    my $hash = crypt($password, make_salt());
+    my $dbh = build_dbh();
+    my $sth = $dbh->prepare('insert into users(email, password) values (?,?)');
+    if($sth->execute($email,hash)) {
+        print "$email successfully added\n";
+    }
+}
+
+sub del_user {
+    if(@ARGV < 1) {
+        print STDERR "Need an email address to del\n";
+        usage();
+        exit 1;
+    }
+    my $email = shift @ARGV;
+    my $dbh = build_dbh();
+    my $sth = $dbh->prepare('delete from users where email=?');
+    if($sth->execute($email)) {
+        print "$email removed\n";
+    }
+}
+
+sub list_aliases {
+   my $dbh = build_dbh();
+    my $sth = $dbh->prepare('SELECT source,dest FROM aliases');
+    $sth->execute();
+    while(my $row = $sth->fetchrow_hashref()) {
+        print q{  }.$row->{'source'}." -> ".$row->{'dest'}."\n";
+    }
+}
+sub add_alias {
+    if(@ARGV < 2) {
+        print STDERR "Need the alias and the destination email address\n";
+        usage();
+        exit 1;
+    }
+    my $alias = shift @ARGV;
+    my $dest_email = shift @ARGV;
+
+    my $dbh = build_dbh();
+    my $sth = $dbh->prepare('insert into aliases(source, dest) values (?,?)');
+    if($sth->execute($alias,$dest_email)) {
+        print "Alias $alias to $dest_email added\n";
+    }
+}
+
+
+sub del_alias {
+    if(@ARGV < 1) {
+        print STDERR "Need an email alias to del\n";
+        usage();
+        exit 1;
+    }
+    my $email = shift @ARGV;
+    my $dbh = build_dbh();
+    my $sth = $dbh->prepare('delete from aliases where source=?');
+    if($sth->execute($email)) {
+        print "$email removed\n";
+    }
+}
+
+sub build_dbh {
+    my $sql_connect_string = sprintf('DBI:mysql:%s;host=%s',
+                                     $settings->{'dovecot_sql_user'},
+                                     $settings->{'mysql_host'});
+    my $dbh = DBI->connect($sql_connect_string,
+                           $settings->{'dovecot_sql_user'},
+                           $settings->{'dovecot_sql_pass'});
+    return $dbh;
+}
+
+sub get_settings {
+    my @needed_vars = qw(MYSQL_HOST DOVECOT_SQL_USER DOVECOT_SQL_PASS);
+    if(-f 'vars') {
+        open(my $fh, '<', 'vars') or die $!;
+        while(<$fh>) {
+            my $line = trim($_);
+            my @parts = split(/=/,$line);
+            my $key = lc shift @parts;
+            my $value = join('=',@parts);
+            $settings->{$key} = $value;
+        }
+        close($fh);
+    }
+    else {
+        foreach my $var (@needed_vars) {
+            if(exists($ENV{uc($var)}) and length(trim($ENV{uc($var)})) > 0 ) {
+                $settings->{lc($var)} = $ENV{uc($var)};
+            }
+        }
+    }
+    my $missing_vars = 0;
+    foreach my $var (@needed_vars) {
+        if(not exists($settings->{lc($var)}) ) {
+            $missing_vars += 1;
+        }
+    }
+    if($missing_vars > 0) {
+        print STDERR "Need the following variables\n";
+        foreach my $var (@needed_vars) {
+            print STDERR q{  }.$var."\n";
+        }
+        print STDERR "\nEither create environment variables\n";
+        print STDERR "or create a file named 'vars' in this directory\n";
+    }
+
+}
+
+sub trim {
+    my $string = shift;
+    $string =~ s/^\s+//;
+    $string =~ s/\s+$//;
+    return $string;
+}
+
+
+sub make_salt {
+    our @valid_salt = ( "a".."z", "A".."Z", "0".."9", qw(/ \ ! @ % ^), "#" );
+    my $salt = join "", map { $valid_salt[rand(@valid_salt)] } 1..8;
+    $salt = '$6$'.$salt;
+    return $salt;
+}
