@@ -226,7 +226,7 @@ sub trim {
 
 
 sub make_salt {
-    our @valid_salt = ( "a".."z", "A".."Z", "0".."9", qw(/ \ ! @ % ^), "#" );
+    our @valid_salt = ( "a".."z", "A".."Z", "0".."9", '/', '+' );
     my $salt = join "", map { $valid_salt[rand(@valid_salt)] } 1..8;
     $salt = '$6$'.$salt;
     return $salt;
